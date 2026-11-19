@@ -585,6 +585,41 @@ def decode_output(data: bytes) -> str:
     return data.decode("utf-8", "replace")
 
 
+# SHFileOperation / Win32 常见错误码 → 可读文本。
+# System FormatMessage 在部分环境（无系统消息表 / 精简运行时）会返回空，
+# 故以本地字典为主，系统翻译兜底。
+_ERROR_TEXT = {
+    5: "拒绝访问（权限不足）",
+    32: "文件正在被其他程序使用（共享冲突）",
+    33: "文件被锁定",
+    87: "参数无效",
+    1223: "操作已取消",
+    0x71: "操作被取消或目标正在使用（Shell 错误 0x71）",
+    0x4C7: "操作已取消（Shell 错误 0x4C7）",
+}
+
+
+def format_win_error(code: int) -> str:
+    """把错误码翻译成可读中文；本地字典优先，系统 FormatMessage 兜底。"""
+    if not code:
+        return ""
+    if code in _ERROR_TEXT:
+        return _ERROR_TEXT[code]
+    flags = 0x1000 | 0x0200  # FORMAT_MESSAGE_ALLOCATE_BUFFER | FROM_SYSTEM
+    buf = ctypes.c_wchar_p()
+    try:
+        n = kernel32.FormatMessageW(
+            flags, None, code, 0, ctypes.byref(buf), 0, None
+        )
+        if n and buf.value:
+            text = buf.value.strip().rstrip("。\r\n")
+            kernel32.LocalFree(buf)
+            return text
+    except Exception:  # noqa: BLE001
+        pass
+    return f"系统错误 {code}"
+
+
 def get_process_name(pid: int) -> str:
     try:
         import psutil
@@ -1023,7 +1058,17 @@ def recycle_path(path: str) -> Tuple[bool, str]:
     except Exception as exc:  # noqa: BLE001
         return False, f"{type(exc).__name__}: {exc}"
     if rc != 0 or op.fAnyOperationsAborted:
-        return False, f"移入回收站失败 err={rc} aborted={bool(op.fAnyOperationsAborted)}"
+        text = format_win_error(rc) or "未知错误"
+        hint = ""
+        if (
+            rc in (ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION, 0x71)
+            or "正在" in text or "锁定" in text or "占用" in text
+        ):
+            hint = "；目录/文件内可能有正在运行的程序锁着它，请先对路径执行「仅解锁」释放占用后重试"
+        return False, (
+            f"移入回收站失败：{text}（错误码 {rc}，"
+            f"已中止={bool(op.fAnyOperationsAborted)}）{hint}"
+        )
     return True, "已移入回收站（可从回收站还原）"
 
 

@@ -635,6 +635,16 @@ class MainWindow(QMainWindow):
 
     def _on_final_done(self, result: ActionResult):
         self.log_append(self._fmt_result(result))
+        if not result.ok:
+            # 最终操作失败必须让用户看见，不能只在日志里静默滚动
+            QMessageBox.warning(
+                self, "操作失败",
+                f"{result.message}：{result.detail}\n\n"
+                "处理建议：\n"
+                "• 若提示占用/共享冲突：先对该路径执行「仅解锁」，再重试删除\n"
+                "• 若权限不足：右键「以管理员身份运行」后重试\n"
+                "• 网络盘 / U 盘不支持回收站，请直接手动删除",
+            )
         self._advance()
 
     def _advance(self):

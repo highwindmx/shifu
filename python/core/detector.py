@@ -18,6 +18,34 @@ _KIND_LABELS = {
     "UNKNOWN": "未知原因",
 }
 
+# 目录递归诊断的上限：Restart Manager 对每个资源都要注册，文件太多会拖慢诊断。
+# 被占用导致删不掉的通常是少数几个 exe/dll，扫前 N 个足够命中。
+_DIR_SCAN_LIMIT = 400
+
+
+def _collect_files_for_rm(path: str, limit: int = _DIR_SCAN_LIMIT) -> List[str]:
+    """目录 → 收集内部文件路径（含子目录），供 Restart Manager 逐个注册。
+
+    RM 对"目录本身"注册时查不到占用其内部文件的进程（实测：目录级查询恒返回 0
+    个占用者），必须把里面的文件列出来单独查。限量 + 跳过无权访问的子目录，
+    避免大目录卡死诊断。
+    """
+    found: List[str] = []
+    try:
+        for root, dirs, files in os.walk(path, topdown=True, onerror=lambda _: None):
+            # 跳过常见的无关/易循环目录
+            dirs[:] = [
+                d for d in dirs
+                if d.lower() not in ("$recycle.bin", "system volume information")
+            ]
+            for name in files:
+                found.append(os.path.join(root, name))
+                if len(found) >= limit:
+                    return found
+    except Exception:  # noqa: BLE001
+        pass
+    return found
+
 
 def diagnose(path: str) -> Diagnosis:
     """单路径诊断。"""
@@ -36,7 +64,13 @@ def diagnose(path: str) -> Diagnosis:
     attrs = d.attributes
 
     # Restart Manager 识别占用进程（L1）
-    rm_code, procs, reboot_reason = winapi.rm_query([p])
+    # 目录本身查不到占用者 → 递归注册其内部文件（限量），才能查出是谁锁着目录
+    rm_targets = [p]
+    if d.is_dir:
+        inner_files = _collect_files_for_rm(p)
+        if inner_files:
+            rm_targets = inner_files
+    rm_code, procs, reboot_reason = winapi.rm_query(rm_targets)
     d.processes = procs
 
     # CreateFile 探测删除权限
@@ -75,6 +109,8 @@ def diagnose(path: str) -> Diagnosis:
         d.kind = "UNKNOWN"
         d.suggestions.append("L3: 深度扫描句柄，或 L4: 重启后删除")
 
+    if d.is_dir and len(rm_targets) > 1:
+        d.detail += f"（已递归扫描目录内 {len(rm_targets)} 个文件）"
     if reboot_reason:
         d.detail += f"；RM 重启原因: {reboot_reason}"
     if rm_code not in (0,):
