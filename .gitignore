@@ -1,0 +1,16 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# WorkBuddy 本地项目数据（工作日志、记忆，不入库）
+.workbuddy/
+
+# 构建产物隔离区（待用户复核的旧产物）
+quarantine/
