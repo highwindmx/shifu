@@ -1,0 +1,10 @@
+# 构建产物（体积大，不入库；由 tools/build.bat 现场生成）
+dist/
+dist-slim/
+
+# .NET 中间产物
+bin/
+obj/
+
+# Visual Studio 本地用户配置
+*.csproj.user

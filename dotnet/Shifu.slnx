@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Shifu.Agent/Shifu.Agent.csproj" />
+    <Project Path="src/Shifu.Core/Shifu.Core.csproj" />
+    <Project Path="src/Shifu/Shifu.csproj" />
+  </Folder>
+</Solution>
